@@ -44,6 +44,8 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'telegram_bot',
+    'users',
+    'finance',
 ]
 
 MIDDLEWARE = [
@@ -123,6 +125,6 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 
+OPENAI_API_KEY = os.getenv('OPENAI_API_KEY', '')
 
-
-
+DATABASE_URL = os.getenv('DATABASE_URL', '')
