@@ -62,7 +62,7 @@ AURA_CHECKIN_TOOLS = [
                 "context_update": {
                     "type": "object",
                     "description": "A partial update to merge into financial_context.",
-                    "additionalProperties": true
+                    "additionalProperties": True
                 },
                 "action_plan": {
                     "type": "string",

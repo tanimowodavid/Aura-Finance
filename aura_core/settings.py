@@ -129,4 +129,6 @@ STATIC_URL = 'static/'
 
 TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN', '')
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY', '')
-
+OPIK_API_KEY = os.getenv('OPIK_API_KEY', '')
+OPIK_WORKSPACE = os.getenv('OPIK_WORKSPACE', '')
+# OPIK_PROJECT_NAME = 

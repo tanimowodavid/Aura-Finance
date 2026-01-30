@@ -42,6 +42,8 @@ def handle_onboarding_message(user, message):
             return "Great—your profile is fully set up!"
     
     return process_aura_chat(user, message, "onboarding", onboarding_model, onboarding_tool_logic)
+        
+
 
 def handle_checkin_message(user, message):
     def checkin_tool_logic(user, tool_data):

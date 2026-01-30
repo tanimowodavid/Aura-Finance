@@ -1,11 +1,15 @@
 # aura/llm.py
 from openai import OpenAI
+import opik
+from opik import opik_context
 import json
 from .prompts import AURA_ONBOARDING_SYSTEM_PROMPT, AURA_CHECKIN_SYSTEM_PROMPT, AURA_GENERAL_SYSTEM_PROMPT
 from .tools import AURA_ONBOARDING_TOOLS, AURA_CHECKIN_TOOLS
 
+opik.configure(project_name="Aura Finance")
 client = OpenAI()
 
+@opik.track
 def _aura_llm_engine(system_prompt, user, history, tools=None):
     """The source of truth for calling the LLM."""
     context_parts = [f"User: {user.first_name} (ID: {user.id})"]
@@ -51,18 +55,35 @@ def _aura_llm_engine(system_prompt, user, history, tools=None):
     response = client.chat.completions.create(**kwargs)
     out = response.choices[0].message
 
+    trace_metadata = {
+        "user_id": user.id,
+        "history": history
+    }
+
     if out.tool_calls:
         tool = out.tool_calls[0]
+        args = json.loads(tool.function.arguments)
+
+        opik_context.update_current_trace(
+            tags=["tool_call", tool.function.name],
+            metadata={
+                **trace_metadata,
+                "final_decision": "tool_call",
+                "tool_arguments": args
+            }
+        )
+
         return {
             "tool": {
                 "name": tool.function.name,
-                "arguments": json.loads(tool.function.arguments),
+                "arguments": args,
             }
         }
     
     return {"assistant": out.content}
 
-# Now your specific functions are clean and focused:
+
+
 def onboarding_model(history, user):
     return _aura_llm_engine(AURA_ONBOARDING_SYSTEM_PROMPT, user, history, AURA_ONBOARDING_TOOLS)
 
