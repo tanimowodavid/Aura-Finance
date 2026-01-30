@@ -1,156 +1,55 @@
 from users.models import User
-from finance.models import FinancialProfile, CheckIn
-from .gemini import generate_response
-from aura.prompts import AURA_SYSTEM_PROMPT
 from decimal import Decimal
+from aura.models import ChatMessage
+from ..utils import format_history
+from .llm import onboarding_model, checkin_model, general_model
+from .tools import finalize_onboarding, finish_check_in
 
 
-def handle_message(telegram_id: int, text: str) -> str:
-    user, _ = User.objects.get_or_create(
-        telegram_id=telegram_id
+def process_aura_chat(user, message, session_type, llm_model, tool_handler=None):
+    """Universal handler for all chat types."""
+    text = message.get("text", "")
+    chat_id = str(message["chat"]["id"])
+
+    # Log User Message
+    ChatMessage.objects.create(
+        chat_id=chat_id, role="user", content=text, session_type=session_type
     )
 
-    text = text.strip().lower()
+    # Get LLM Response
+    history = format_history(chat_id, session_type=session_type)
+    response = llm_model(history, user)
 
-    if text.startswith("/start"):
-        return start_flow(user)
+    # Handle Tool Calls (The Dynamic Part)
+    if "tool" in response and tool_handler:
+        return tool_handler(user, response["tool"])
 
-    if not user.is_onboarded:
-        return onboarding_flow(user, text)
-
-    if text.startswith("/checkin"):
-        return checkin_flow(user)
-
-    if text.startswith("/stats"):
-        return stats_flow(user)
-
-    if text.startswith("/motivate"):
-        return motivate_flow(user)
-
-    if text.startswith("/advise"):
-        return advise_flow(user)
-
-    return free_chat_flow(user, text)
-
-
-# ---------- FLOWS ----------
-
-def start_flow(user: User) -> str:
-    if user.is_onboarded:
-        return (
-            "Welcome back 👋\n\n"
-            "You can:\n"
-            "/checkin – reflect on savings\n"
-            "/stats – see your progress\n"
-            "/motivate – get encouragement\n"
-            "/advise – practical saving advice"
-        )
-
-    return (
-        "Hi, I’m *Aura* 💰\n\n"
-        "I help you save more money through reflection and mindset.\n\n"
-        "Let’s begin.\n"
-        "How much do you currently have saved? (number only)"
+    # Handle Text Reply
+    ai_reply = response.get("assistant", "I'm sorry, I couldn't process that.")
+    
+    # Log Assistant Message
+    ChatMessage.objects.create(
+        chat_id=chat_id, role="assistant", content=ai_reply, session_type=session_type
     )
 
-
-def onboarding_flow(user: User, text: str) -> str:
-    profile = getattr(user, "financial_profile", None)
-
-    if not profile:
-        try:
-            amount = Decimal(text)
-        except:
-            return "Please enter a valid number for your savings."
-
-        FinancialProfile.objects.create(
-            user=user,
-            estimated_savings=amount
-        )
-        return "Got it. What are you saving for? (short note)"
-
-    if not profile.savings_goal_note:
-        profile.savings_goal_note = text
-        profile.save()
-
-        user.is_onboarded = True
-        user.save()
-
-        return (
-            "You’re all set 🎉\n\n"
-            "Remember: paying yourself first builds freedom.\n\n"
-            "Come back anytime and type /checkin."
-        )
-
-    return "Onboarding already completed."
+    return ai_reply
 
 
-def checkin_flow(user: User) -> str:
-    return (
-        "Let’s check in 💡\n\n"
-        "Have your savings increased since the last time?\n"
-        "Reply with the new total amount."
-    )
+def handle_onboarding_message(user, message):
+    def onboarding_tool_logic(user, tool_data):
+        if tool_data["name"] == "finalize_onboarding":
+            finalize_onboarding(user_id=user.id, **tool_data["arguments"])
+            return "Great—your profile is fully set up!"
+    
+    return process_aura_chat(user, message, "onboarding", onboarding_model, onboarding_tool_logic)
 
+def handle_checkin_message(user, message):
+    def checkin_tool_logic(user, tool_data):
+        if tool_data["name"] == "finish_check_in":
+            finish_check_in(user_id=user.id, **tool_data["arguments"])
+            return "Your checkin is complete!"
+            
+    return process_aura_chat(user, message, "check_in", checkin_model, checkin_tool_logic)
 
-def process_checkin_amount(user: User, text: str) -> str:
-    try:
-        new_amount = Decimal(text)
-    except:
-        return "Please enter a valid number."
-
-    profile = user.financial_profile
-    delta = new_amount - profile.estimated_savings
-
-    profile.estimated_savings = new_amount
-    profile.last_check_in_at = profile.updated_at
-    profile.save()
-
-    status = "no_change"
-    if delta > 0:
-        status = "saved"
-    elif delta < 0:
-        status = "overspent"
-
-    CheckIn.objects.create(
-        user=user,
-        status=status,
-        notes=f"Delta: {delta}"
-    )
-
-    if delta > 0:
-        return f"Great job 🎉 You saved {delta}. Small wins matter."
-    elif delta < 0:
-        return "That’s okay. Awareness comes before discipline."
-    else:
-        return "No change. Staying steady is still progress."
-
-
-def stats_flow(user: User) -> str:
-    profile = user.financial_profile
-    return (
-        f"*Your Savings Snapshot*\n\n"
-        f"Total saved: {profile.estimated_savings}\n"
-        f"Goal: {profile.savings_goal_note or '—'}"
-    )
-
-
-def motivate_flow(user: User) -> str:
-    return generate_response(
-        AURA_SYSTEM_PROMPT,
-        "Give a short motivational message about saving money."
-    )
-
-
-def advise_flow(user: User) -> str:
-    return generate_response(
-        AURA_SYSTEM_PROMPT,
-        "Give one practical saving advice inspired by finance books."
-    )
-
-
-def free_chat_flow(user: User, text: str) -> str:
-    return generate_response(
-        AURA_SYSTEM_PROMPT,
-        text
-    )
+def handle_general_message(user, message):
+    return process_aura_chat(user, message, "general", general_model)
