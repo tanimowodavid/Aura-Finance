@@ -6,7 +6,7 @@ import json
 from .prompts import AURA_ONBOARDING_SYSTEM_PROMPT, AURA_CHECKIN_SYSTEM_PROMPT, AURA_GENERAL_SYSTEM_PROMPT
 from .tools import AURA_ONBOARDING_TOOLS, AURA_CHECKIN_TOOLS
 
-opik.configure(project_name="Aura Finance")
+opik.configure()
 client = OpenAI()
 
 @opik.track
