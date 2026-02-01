@@ -1,6 +1,5 @@
 # aura/tools.py
-from finance.models import FinancialProfile, SavingsHistory
-from users.models import User
+from users.models import User, FinancialProfile, SavingsHistory
 from django.utils import timezone
 
 
@@ -14,8 +13,8 @@ AURA_ONBOARDING_TOOLS = [
                 "type": "object",
                 "properties": {
                     "estimated_savings": {
-                    "type": "number",
-                    "description": "The total amount the user has saved."
+                        "type": "number",
+                        "description": "The total amount the user has saved."
                     },
                     "motivation": {
                         "type": "string",
@@ -26,58 +25,65 @@ AURA_ONBOARDING_TOOLS = [
                         "description": "How often the user wants to be prompted for updates."
                     },
                     "financial_context": {
-                    "type": "object",
-                    "description": "Additional financial context about the user (income sources, expenses, challenges, etc.)",
-                    "properties": {}
-                },
-                "action_plan": {
-                    "type": "string",
-                    "description": "Personalized behavioral plan for the upcoming savings period."
-                },
+                        "type": "object",
+                        "description": "Dynamic context about income sources, expenses, and habits.",
+                        "properties": {
+                            "primary_income_source": { "type": "string" }
+                        },
+                        "additionalProperties": { "type": "string" }
+                    },
+
+                    "behavioral_tag": {"type": "string", "description": "e.g., Emotional Spender"},
+
+                    "action_plan": {
+                        "type": "string",
+                        "description": "Personalized behavioral plan for the upcoming savings period."
+                    },
                 },
                 "required": [
                     "estimated_savings",
                     "motivation",
                     "check_in_frequency",
                     "financial_context",
+                    "behavioral_tag",
                     "action_plan",
                 ]
             }
         }
     }
 ]
+
 AURA_CHECKIN_TOOLS = [
     {
         "type": "function",
         "function": {
             "name": "finish_check_in",
-            "description": "Mark a check-in as complete and update the user's savings + financial context.",
+            "description": "Finalizes the session, updates the total savings, and refreshes the action plan.",
             "parameters": {
-                "type": "object",
-                "properties": {
+            "type": "object",
+            "properties": {
                 "latest_savings": {
-                    "type": "number",
-                    "description": "The user's newly reported savings total."
-                },
-                "context_update": {
-                    "type": "object",
-                    "description": "A partial update to merge into financial_context.",
-                    "additionalProperties": True
+                "type": "number",
+                "description": "The user's newly reported total savings balance."
                 },
                 "action_plan": {
-                    "type": "string",
-                    "description": "Personalized behavioral plan for the upcoming savings period."
-                }
+                "type": "string",
+                "description": "A 3-step behavioral plan based on the current check-in conversation."
                 },
-                "required": ["latest_savings", "action_plan"]
+                "context_update": {
+                "type": "object",
+                "description": "Any new income or expense details learned during this chat.",
+                "additionalProperties": { "type": "string" }
+                }
+            },
+            "required": ["latest_savings", "action_plan"]
             }
         }
     }
 ]
 
 
-
-def finalize_onboarding(user_id: int, estimated_savings, motivation, check_in_frequency, financial_context, action_plan):
+def finalize_onboarding(user_id: int, estimated_savings, motivation, check_in_frequency, financial_context, behavioral_tag, action_plan):
     """
     Called by Aura (GPT function calling).
     Creates or updates the user's financial profile and marks onboarding as complete.
@@ -94,8 +100,11 @@ def finalize_onboarding(user_id: int, estimated_savings, motivation, check_in_fr
     profile.motivation = motivation
     profile.check_in_frequency = check_in_frequency
     profile.financial_context = financial_context
+    profile.behavioral_tag = behavioral_tag
     profile.action_plan = action_plan
     profile.save()
+
+    SavingsHistory.objects.get_or_create(user=user, amount=estimated_savings)
 
     user.is_onboarded = True
     user.save(update_fields=["is_onboarded"])
@@ -108,39 +117,45 @@ def finalize_onboarding(user_id: int, estimated_savings, motivation, check_in_fr
         "motivation": motivation,
         "check_in_frequency": check_in_frequency,
         "financial_context": financial_context,
+        "behavioral_tag": behavioral_tag,
         "action_plan": action_plan,
     }
 
 
-def finish_check_in(user_id, args):
+
+def finish_check_in(user_id, latest_savings, action_plan, context_update=None):
     try:
         user = User.objects.get(id=user_id)
     except User.DoesNotExist:
         return {"status": "error", "message": "User not found."}
-    
-    user.is_in_checkin = False
-    user.save()
 
     profile = user.financial_profile
+    context_update = context_update or {}
 
-    latest = args["latest_savings"]
-    context_update = args.get("context_update", {})
-    action_plan = args["action_plan"]
+    # 1. Calculate Velocity (The PAW Metric)
+    # Get the last recorded entry before this update
+    previous_entry = user.savings_history.order_by('-recorded_at').first()
+    previous_amount = float(previous_entry.amount) if previous_entry else 0
+    velocity = float(latest_savings) - previous_amount
 
-    # Update main savings value
-    profile.estimated_savings = latest
+    # 2. Update Profile
+    profile.estimated_savings = latest_savings
     profile.action_plan = action_plan
-
-    # Merge contexts
-    profile.financial_context = {
-        **profile.financial_context,
-        **context_update
-    }
+    profile.financial_context = {**profile.financial_context, **context_update}
     profile.save()
 
-    # Save savings history
-    SavingsHistory.objects.create(
-        user=user,
-        amount=latest
-    )
+    # 3. Save History
+    SavingsHistory.objects.create(user=user, amount=latest_savings)
 
+    # 4. Release Check-in State
+    user.is_in_checkin = False
+    user.save(update_fields=["is_in_checkin"])
+
+    return {
+        "status": "success",
+        "velocity": velocity,
+        "is_up": velocity > 0,
+        "latest_savings": float(latest_savings),
+        "action_plan": action_plan,
+        "behavioral_tag": profile.behavioral_tag
+    }

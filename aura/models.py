@@ -3,7 +3,7 @@ from users.models import User
 
 # Create your models here.
 
-class ChatMessage(models.Model):
+class ChatMessageLog(models.Model):
     chat_id = models.CharField(max_length=100)
     role = models.CharField(max_length=20)  # "user" | "assistant"
     content = models.TextField()

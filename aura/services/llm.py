@@ -3,32 +3,36 @@ from openai import OpenAI
 import opik
 from opik import opik_context
 import json
-from .prompts import AURA_ONBOARDING_SYSTEM_PROMPT, AURA_CHECKIN_SYSTEM_PROMPT, AURA_GENERAL_SYSTEM_PROMPT
+from .prompts import *
 from .tools import AURA_ONBOARDING_TOOLS, AURA_CHECKIN_TOOLS
 
 opik.configure()
 client = OpenAI()
 
+
+# ================================
+# Core LLM Engine Function
+# ================================
+
 @opik.track
 def _aura_llm_engine(system_prompt, user, history, tools=None):
-    """The source of truth for calling the LLM."""
+    # ====================
+    # Build User Context
+    # ====================
     context_parts = [f"User: {user.first_name} (ID: {user.id})"]
-
-    # Add Financial Profile (One-to-One)
-    # We use hasattr to avoid "User has no financial_profile" errors
-    if hasattr(user, 'financial_profile'):
+    if hasattr(user, 'financial_profile'): # Add Financial Profile (One-to-One)
         profile = user.financial_profile
         profile_data = {
             "monthly_savings_goal": float(profile.estimated_savings),
             "motivation": profile.motivation,
             "check_in_frequency": profile.check_in_frequency,
+            "behavioral_tag": profile.behavioral_tag,
             "current_action_plan": profile.action_plan,
             "extra_context": profile.financial_context 
         }
         context_parts.append(f"Financial Profile: {json.dumps(profile_data)}")
 
-    # Add Recent Savings (ForeignKey)
-    # Fetches only the 5 most recent records to save space/tokens
+    # Add Recent Savings History
     recent_savings = list(
         user.savings_history.order_by('-recorded_at')[:5]
         .values('amount', 'recorded_at')
@@ -45,6 +49,8 @@ def _aura_llm_engine(system_prompt, user, history, tools=None):
     full_context = "\n---\n".join(context_parts)
     full_prompt = f"{system_prompt}\n\nCURRENT USER DATA:\n{full_context}"
 
+
+    # =========== Prepare messsage for llm ==================
     messages = [{"role": "system", "content": full_prompt}] + history
     
     # Only include tools if they are provided
@@ -92,3 +98,44 @@ def checkin_model(history, user):
 
 def general_model(history, user):
     return _aura_llm_engine(AURA_GENERAL_SYSTEM_PROMPT, user, history)
+
+
+# =================================
+# Special llm for reminders
+# =================================
+from django.utils import timezone
+
+def send_checkin_reminder(profile):
+    user = profile.user
+
+    user_context = f"""
+    User name: {user.first_name or user.username}
+    Check-in frequency: {profile.check_in_frequency}
+    Estimated savings: {profile.estimated_savings}
+    Motivation: {profile.motivation}
+    """
+
+    try:
+        response = client.responses.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": AURA_REMINDER_SYSTEM_PROMPT},
+                {"role": "user", "content": user_context}
+            ]
+        )
+
+        reminder_text = response.output_text
+        return reminder_text
+
+    except Exception as e:
+        print(f"LLM API Error: {e}")
+        fallback = (
+            f"Hey {user.first_name or user.username}, "
+            f"it's time to check in with Aura. "
+            f"How has your progress been this week?"
+            f"send the /checkin command to begin"
+        )
+        return fallback
+
+
+
