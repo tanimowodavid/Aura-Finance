@@ -28,7 +28,8 @@ AURA_ONBOARDING_TOOLS = [
                         "type": "object",
                         "description": "Dynamic context about income sources, expenses, and habits.",
                         "properties": {
-                            "primary_income_source": { "type": "string" }
+                            "primary_income_source": { "type": "string" },
+                            "major_expenses": { "type": "string" }
                         },
                         "additionalProperties": { "type": "string" }
                     },
@@ -37,7 +38,7 @@ AURA_ONBOARDING_TOOLS = [
 
                     "action_plan": {
                         "type": "string",
-                        "description": "Personalized behavioral plan for the upcoming savings period."
+                        "description": "one simple personalized behavioral task for the upcoming savings period."
                     },
                 },
                 "required": [
@@ -98,10 +99,11 @@ def finalize_onboarding(user_id: int, estimated_savings, motivation, check_in_fr
 
     profile.estimated_savings = estimated_savings
     profile.motivation = motivation
-    profile.check_in_frequency = check_in_frequency
+    profile.check_in_frequency = str(check_in_frequency).lower()
     profile.financial_context = financial_context
     profile.behavioral_tag = behavioral_tag
     profile.action_plan = action_plan
+    profile.last_check_in = timezone.now()
     profile.save()
 
     SavingsHistory.objects.get_or_create(user=user, amount=estimated_savings)
@@ -132,16 +134,16 @@ def finish_check_in(user_id, latest_savings, action_plan, context_update=None):
     profile = user.financial_profile
     context_update = context_update or {}
 
-    # 1. Calculate Velocity (The PAW Metric)
-    # Get the last recorded entry before this update
+    # Calculate Velocity
     previous_entry = user.savings_history.order_by('-recorded_at').first()
     previous_amount = float(previous_entry.amount) if previous_entry else 0
     velocity = float(latest_savings) - previous_amount
 
-    # 2. Update Profile
+    # Update Profile
     profile.estimated_savings = latest_savings
     profile.action_plan = action_plan
     profile.financial_context = {**profile.financial_context, **context_update}
+    profile.last_check_in = timezone.now()
     profile.save()
 
     # 3. Save History

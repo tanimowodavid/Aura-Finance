@@ -45,10 +45,13 @@ def handle_onboarding_message(user, message):
         if tool_data["name"] == "finalize_onboarding":
             data = finalize_onboarding(user_id=user.id, **tool_data["arguments"])
             return (
-                f"Your profile is officially set up. Based on our chat, I’ve categorized you as **{data['behavioral_tag']}**.\n\n"
-                f"It’s a solid starting point on your journey to becoming a PAW. You can continue to chat with me for advice "
-                f"at any time, but I’ll reach out for our first progress check-in based on your **{data['check_in_frequency']}** preference.\n\n"
-                f"**Your immediate Action Plan:**\n{data['action_plan']}"
+                f"Your profile is officially set up! Based on our chat, I’ve tailored your "
+                f"coaching strategy to help you stay consistent and build that bulletproof saving habit.\n\n"
+                
+                f"I’ll reach out for our first progress audit based on your **{data['check_in_frequency']}** preference, "
+                f"but you can message me anytime if you’re feeling tempted to spend or need a quick tip.\n\n"
+                
+                f"**Your first habit-building task:**\n{data['action_plan']}\n\n"
             )
     
     return process_aura_chat(user, message, "onboarding", onboarding_model, onboarding_tool_logic)
@@ -67,18 +70,20 @@ def handle_checkin_message(user, message):
                 
                 # Dynamic feedback based on velocity
                 if res["is_up"]:
-                    feedback = f"Excellent. Your wealth has grown by {velocity:,.2f} since our last session—true PAW behavior."
+                    feedback = f"Great work! You’ve added {velocity:,.2f} to your savings since we last spoke. Your consistency is paying off! 🦾🥳"
                 elif velocity == 0:
-                    feedback = "Audit complete. Your balance is holding steady, but we should look for ways to increase your velocity."
+                    feedback = "Audit complete. You’ve held steady—no ground lost, but let’s see if we can spark some growth before our next sync."
                 else:
-                    feedback = f"Check-in finished. Your balance has dipped by {abs(velocity):,.2f}. Let’s focus on tightening the efficiency."
+                    feedback = f"Audit finished. It looks like {abs(velocity):,.2f} left your savings. No stress—let’s look at what happened and adjust our strategy."
 
                 return (
                     f"{feedback}\n\n"
-                    f"As a **{tag}**, here is your action plan until our next sync:\n"
+                    f"**Your tailored habit-building plan:**\n"
                     f"{plan}"
                 )
             return "Check-in failed. Please try again."
+
+
             
     return process_aura_chat(user, message, "check_in", checkin_model, checkin_tool_logic)
 

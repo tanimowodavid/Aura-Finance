@@ -54,7 +54,7 @@ class FinancialProfile(models.Model):
         Returns the datetime when the next check-in reminder should be sent.
         If user has never checked in, base it on profile creation time.
         """
-        base_time = self.last_check_in or self.created_at
+        base_time = self.last_check_in
         interval = self.CHECKIN_INTERVALS.get(self.check_in_frequency, timedelta(weeks=1))
         return base_time + interval
 
