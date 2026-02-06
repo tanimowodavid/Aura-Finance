@@ -2,6 +2,7 @@
 from openai import OpenAI
 import opik
 from opik import opik_context
+from opik.integrations.openai import track_openai
 import json
 from .prompts import *
 from .tools import AURA_ONBOARDING_TOOLS, AURA_CHECKIN_TOOLS
@@ -9,6 +10,7 @@ from .tools import AURA_ONBOARDING_TOOLS, AURA_CHECKIN_TOOLS
 opik.configure()
 client = OpenAI()
 
+openai_client = track_openai(client)
 
 # ================================
 # Core LLM Engine Function
@@ -58,7 +60,7 @@ def _aura_llm_engine(system_prompt, user, history, tools=None):
     if tools:
         kwargs.update({"tools": tools, "tool_choice": "auto"})
 
-    response = client.chat.completions.create(**kwargs)
+    response = openai_client.chat.completions.create(**kwargs)
     out = response.choices[0].message
 
     trace_metadata = {
